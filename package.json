@@ -14,7 +14,18 @@
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "mongoose": "^9.2.1",
+    "mongoose": "^9.4.1",
     "react-scripts": "5.0.1"
-  }
+  },
+  "devDependencies": {
+    "jest": "^27.5.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yogxsh296/backend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yogxsh296/backend/issues"
+  },
+  "homepage": "https://github.com/yogxsh296/backend#readme"
 }
