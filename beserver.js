@@ -1,18 +1,29 @@
-// beserver.js
+// server.js
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
+
 const app = express();
-const PORT = 5000;
+
+// Use Render's assigned port, or default to 5000 for local testing
+const PORT = process.env.PORT || 5000;
 
 // Middlewares
-app.use(cors({ origin:["https://sam-proj.yogesh1434.workers.dev"]}));
+// Ensure the origin matches your Cloudflare URL exactly
+app.use(cors({ 
+  origin: "https://sams-proj.yogeshv1434.workers.dev", 
+  methods: ["GET", "POST", "DELETE", "PUT"], 
+  credentials: true 
+}));
 app.use(express.json());
 
-// MongoDB connection
-mongoose.connect("mongodb://127.0.0.1:27017/sams")
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.log(err));
+// MongoDB connection logic
+// Uses MONGODB_URI from Render Environment Variables
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/sams";
+
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log("✅ MongoDB Connected Successfully"))
+  .catch((err) => console.error("❌ Database connection error:", err));
 
 // ---------- Schemas ---------- //
 
@@ -49,7 +60,7 @@ const Attendance = mongoose.model("Attendance", attendanceSchema);
 
 // ---------- Routes ---------- //
 
-// Test Route
+// Test Route to check if backend is live
 app.get("/", (req, res) => res.send("Backend is running successfully!"));
 
 // Admin login
@@ -193,11 +204,10 @@ app.post("/mark-attendance", async (req, res) => {
     const { qrData, studentId } = req.body;
     if (!qrData || !studentId) return res.status(400).json({ message: "Missing QR data or studentId" });
 
-    const parsed = JSON.parse(qrData); // { studentId, subject, section, periods, createdAt }
+    const parsed = JSON.parse(qrData); 
     const currentTime = Date.now();
     if (currentTime - parsed.createdAt > 30000) return res.status(400).json({ message: "QR Expired" });
 
-    // Prevent multiple scans for same student/period/day
     const existing = await Attendance.findOne({
       studentId,
       subject: parsed.subject,
@@ -207,7 +217,6 @@ app.post("/mark-attendance", async (req, res) => {
     });
     if (existing) return res.json({ message: "Attendance already marked" });
 
-    // Save attendance
     await Attendance.create({
       studentId,
       subject: parsed.subject,
@@ -224,5 +233,5 @@ app.post("/mark-attendance", async (req, res) => {
 
 // ---------- Start Server ---------- //
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
