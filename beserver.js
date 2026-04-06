@@ -50,16 +50,25 @@ const studentSchema = new mongoose.Schema({
 });
 const Student = mongoose.model("Student", studentSchema);
 
-// ✅ UPDATED Attendance Schema
+// Attendance Schema
 const attendanceSchema = new mongoose.Schema({
   studentId: String,
   subject: String,
   section: Number,
   periods: [Number],
   date: { type: String }, // formatted date
-  status: { type: String, default: "Present" } // NEW
+  status: { type: String, default: "Present" }
 });
 const Attendance = mongoose.model("Attendance", attendanceSchema);
+
+// ✅ NEW: Class Session Schema (Tracks classes held by faculty)
+const classSessionSchema = new mongoose.Schema({
+  subject: String,
+  section: Number,
+  date: String,
+  periods: [Number]
+});
+const ClassSession = mongoose.model("ClassSession", classSessionSchema);
 
 // ---------- Routes ---------- //
 
@@ -200,32 +209,21 @@ app.post("/mark-attendance", async (req, res) => {
   try {
     const { qrData, studentId } = req.body;
 
-    // ✅ Check required fields
     if (!qrData || !studentId) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing QR data or studentId"
-      });
+      return res.status(400).json({ success: false, message: "Missing QR data or studentId" });
     }
 
-    // ✅ Parse QR data
     const parsed = JSON.parse(qrData);
     console.log("Parsed QR:", parsed);
     console.log("Student:", studentId);
 
-    // ✅ Check QR expiry (60 seconds)
     const currentTime = Date.now();
     if (currentTime - parsed.createdAt > 60000) {
-      return res.status(400).json({
-        success: false,
-        message: "QR Expired ❌"
-      });
+      return res.status(400).json({ success: false, message: "QR Expired ❌" });
     }
 
-    // ✅ Get today's date (STRING format)
     const today = new Date().toISOString().split("T")[0];
 
-    // ✅ Check if already marked today
     const existing = await Attendance.findOne({
       studentId,
       subject: parsed.subject,
@@ -235,13 +233,9 @@ app.post("/mark-attendance", async (req, res) => {
     });
 
     if (existing) {
-      return res.json({
-        success: false,
-        message: "Attendance already marked ⚠️"
-      });
+      return res.json({ success: false, message: "Attendance already marked ⚠️" });
     }
 
-    // ✅ Save attendance
     await Attendance.create({
       studentId,
       subject: parsed.subject,
@@ -251,39 +245,113 @@ app.post("/mark-attendance", async (req, res) => {
       status: "Present"
     });
 
-    // ✅ Success response
-    res.json({
-      success: true,
-      message: "Attendance marked successfully ✅"
-    });
+    res.json({ success: true, message: "Attendance marked successfully ✅" });
 
   } catch (error) {
     console.log("ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error marking attendance ❌"
-    });
+    res.status(500).json({ success: false, message: "Error marking attendance ❌" });
   }
 });
 
-// ✅ NEW ROUTE: Get Student Attendance
+// Get Student Attendance
 app.get("/api/student-attendance/:studentId", async (req, res) => {
   try {
     const { studentId } = req.params;
-
     const records = await Attendance.find({ studentId }).sort({ date: -1 });
+    res.json({ success: true, data: records });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ success: false, message: "Error fetching attendance" });
+  }
+});
+
+// ---------- ✅ NEW ROUTES START HERE ---------- //
+
+// ✅ NEW: Record a class session (Faculty calls this when generating a QR code)
+app.post("/api/create-class", async (req, res) => {
+  try {
+    const { subject, section, periods } = req.body;
+    
+    if (!subject || !section || !periods) {
+      return res.status(400).json({ success: false, message: "Missing class details" });
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+
+    const existingSession = await ClassSession.findOne({
+      subject,
+      section,
+      date: today,
+      periods
+    });
+
+    if (!existingSession) {
+      await ClassSession.create({
+        subject,
+        section,
+        date: today,
+        periods
+      });
+    }
+
+    res.json({ success: true, message: "Class session recorded successfully!" });
+
+  } catch (error) {
+    console.log("Error creating class session:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// ✅ NEW: Calculate Attendance Summary (Classes Held vs Attended)
+app.get("/api/attendance-summary/:studentId", async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    
+    const student = await Student.findOne({ studentId });
+    if (!student) return res.status(404).json({ success: false, message: "Student not found" });
+
+    // Fetch classes held for this section and attendance marked for this student
+    const classesHeld = await ClassSession.find({ section: student.section });
+    const attendanceRecords = await Attendance.find({ studentId, status: "Present" });
+
+    const summary = {};
+
+    // Count held periods
+    classesHeld.forEach(cls => {
+      if (!summary[cls.subject]) {
+        summary[cls.subject] = { subject: cls.subject, held: 0, attended: 0 };
+      }
+      summary[cls.subject].held += cls.periods.length; 
+    });
+
+    // Count attended periods
+    attendanceRecords.forEach(att => {
+      if (!summary[att.subject]) {
+        summary[att.subject] = { subject: att.subject, held: 0, attended: 0 };
+      }
+      summary[att.subject].attended += att.periods.length;
+    });
+
+    const summaryArray = Object.values(summary).map(item => {
+      const percentage = item.held > 0 ? ((item.attended / item.held) * 100).toFixed(2) : 0;
+      return { ...item, percentage: Number(percentage) };
+    });
+
+    const totalHeld = summaryArray.reduce((acc, curr) => acc + curr.held, 0);
+    const totalAttended = summaryArray.reduce((acc, curr) => acc + curr.attended, 0);
+    const totalPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(2) : 0;
 
     res.json({
       success: true,
-      data: records
+      data: summaryArray,
+      totalHeld,
+      totalAttended,
+      totalPercentage
     });
 
   } catch (error) {
-    console.log(error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching attendance"
-    });
+    console.error("Summary Error:", error);
+    res.status(500).json({ success: false, message: "Error calculating summary" });
   }
 });
 
