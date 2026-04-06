@@ -195,29 +195,49 @@ app.post("/api/student/login", async (req, res) => {
 app.post("/mark-attendance", async (req, res) => {
   try {
     const { qrData, studentId } = req.body;
-    if (!qrData || !studentId) return res.status(400).json({ message: "Missing QR data or studentId" });
 
-    const parsed = JSON.parse(qrData); 
+    // ✅ Check required fields
+    if (!qrData || !studentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing QR data or studentId"
+      });
+    }
+
+    // ✅ Parse QR data
+    const parsed = JSON.parse(qrData);
+    console.log("Parsed QR:", parsed);
+    console.log("Student:", studentId);
+
+    // ✅ Check QR expiry (30 seconds)
     const currentTime = Date.now();
+    if (currentTime - parsed.createdAt > 30000) {
+      return res.status(400).json({
+        success: false,
+        message: "QR Expired ❌"
+      });
+    }
 
-    if (currentTime - parsed.createdAt > 30000)
-      return res.status(400).json({ message: "QR Expired" });
+    // ✅ Get today's date (STRING format)
+    const today = new Date().toISOString().split("T")[0];
 
-    const todayStart = new Date().setHours(0, 0, 0, 0);
-
+    // ✅ Check if already marked today
     const existing = await Attendance.findOne({
       studentId,
       subject: parsed.subject,
       section: parsed.section,
       periods: parsed.periods,
-      date: { $gte: new Date(todayStart) }
+      date: today
     });
 
-    if (existing) return res.json({ message: "Attendance already marked" });
+    if (existing) {
+      return res.json({
+        success: false,
+        message: "Attendance already marked ⚠️"
+      });
+    }
 
-    // ✅ NEW: formatted date
-    const today = new Date().toISOString().split("T")[0];
-
+    // ✅ Save attendance
     await Attendance.create({
       studentId,
       subject: parsed.subject,
@@ -227,11 +247,18 @@ app.post("/mark-attendance", async (req, res) => {
       status: "Present"
     });
 
-    res.json({ success: true, message: "Attendance marked successfully" });
+    // ✅ Success response
+    res.json({
+      success: true,
+      message: "Attendance marked successfully ✅"
+    });
 
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Error marking attendance" });
+    console.log("ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error marking attendance ❌"
+    });
   }
 });
 
