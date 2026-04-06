@@ -55,7 +55,7 @@ const attendanceSchema = new mongoose.Schema({
   studentId: String,
   subject: String,
   section: Number,
-  periods: Number,
+  periods: [Number],
   date: { type: String }, // formatted date
   status: { type: String, default: "Present" } // NEW
 });
@@ -213,9 +213,9 @@ app.post("/mark-attendance", async (req, res) => {
     console.log("Parsed QR:", parsed);
     console.log("Student:", studentId);
 
-    // ✅ Check QR expiry (30 seconds)
+    // ✅ Check QR expiry (60 seconds)
     const currentTime = Date.now();
-    if (currentTime - parsed.createdAt > 30000) {
+    if (currentTime - parsed.createdAt > 60000) {
       return res.status(400).json({
         success: false,
         message: "QR Expired ❌"
