@@ -1,4 +1,4 @@
-// server.js
+// beserver.js
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
@@ -9,7 +9,6 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middlewares
-// Ensure the origin matches your Cloudflare URL exactly
 app.use(cors({ 
   origin: "https://sams-proj.yogeshv1434.workers.dev", 
   methods: ["GET", "POST", "DELETE", "PUT"], 
@@ -17,8 +16,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// MongoDB connection logic
-// Uses MONGODB_URI from Render Environment Variables
+// MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/sams";
 
 mongoose.connect(MONGODB_URI)
@@ -48,19 +46,19 @@ const studentSchema = new mongoose.Schema({
 });
 const Student = mongoose.model("Student", studentSchema);
 
-// Attendance Schema
+// ✅ UPDATED Attendance Schema
 const attendanceSchema = new mongoose.Schema({
   studentId: String,
   subject: String,
   section: Number,
   periods: Number,
-  date: { type: Date, default: Date.now }
+  date: { type: String }, // formatted date
+  status: { type: String, default: "Present" } // NEW
 });
 const Attendance = mongoose.model("Attendance", attendanceSchema);
 
 // ---------- Routes ---------- //
 
-// Test Route to check if backend is live
 app.get("/", (req, res) => res.send("Backend is running successfully!"));
 
 // Admin login
@@ -92,7 +90,6 @@ app.post("/add-faculty", async (req, res) => {
 
     res.json({ success: true, message: "Faculty added successfully", facultyId });
   } catch (error) {
-    console.log(error);
     res.json({ success: false, message: "Error adding faculty" });
   }
 });
@@ -130,7 +127,6 @@ app.post("/api/faculty/login", async (req, res) => {
       faculty: { facultyId: faculty.facultyId, name: faculty.name, department: faculty.department }
     });
   } catch (error) {
-    console.log(error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
@@ -151,7 +147,6 @@ app.post("/add-student", async (req, res) => {
 
     res.json({ success: true, message: "Student added successfully", studentId });
   } catch (error) {
-    console.log(error);
     res.status(500).json({ success: false, message: "Error adding Student" });
   }
 });
@@ -164,7 +159,6 @@ app.delete("/delete-student/:id", async (req, res) => {
 
     res.json({ success: true, message: "Student deleted successfully" });
   } catch (error) {
-    console.log(error);
     res.status(500).json({ success: false, message: "Error deleting student" });
   }
 });
@@ -193,7 +187,6 @@ app.post("/api/student/login", async (req, res) => {
       student: { studentId: student.studentId, name: student.name }
     });
   } catch (error) {
-    console.log(error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
@@ -206,28 +199,60 @@ app.post("/mark-attendance", async (req, res) => {
 
     const parsed = JSON.parse(qrData); 
     const currentTime = Date.now();
-    if (currentTime - parsed.createdAt > 30000) return res.status(400).json({ message: "QR Expired" });
+
+    if (currentTime - parsed.createdAt > 30000)
+      return res.status(400).json({ message: "QR Expired" });
+
+    const todayStart = new Date().setHours(0, 0, 0, 0);
 
     const existing = await Attendance.findOne({
       studentId,
       subject: parsed.subject,
       section: parsed.section,
       periods: parsed.periods,
-      date: { $gte: new Date().setHours(0, 0, 0, 0) }
+      date: { $gte: new Date(todayStart) }
     });
+
     if (existing) return res.json({ message: "Attendance already marked" });
+
+    // ✅ NEW: formatted date
+    const today = new Date().toISOString().split("T")[0];
 
     await Attendance.create({
       studentId,
       subject: parsed.subject,
       section: parsed.section,
-      periods: parsed.periods
+      periods: parsed.periods,
+      date: today,
+      status: "Present"
     });
 
-    res.json({ message: "Attendance marked successfully" });
+    res.json({ success: true, message: "Attendance marked successfully" });
+
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Error marking attendance" });
+  }
+});
+
+// ✅ NEW ROUTE: Get Student Attendance
+app.get("/api/student-attendance/:studentId", async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    const records = await Attendance.find({ studentId }).sort({ date: -1 });
+
+    res.json({
+      success: true,
+      data: records
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching attendance"
+    });
   }
 });
 
