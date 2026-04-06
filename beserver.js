@@ -355,6 +355,31 @@ app.get("/api/attendance-summary/:studentId", async (req, res) => {
   }
 });
 
+// ✅ NEW ROUTE: Get Presentees for a specific session (Faculty View)
+app.get("/api/session-presentees", async (req, res) => {
+  try {
+    const { subject, section, date } = req.query;
+    
+    // 1. Find all attendance records for this specific class today
+    const presentRecords = await Attendance.find({ 
+      subject, 
+      section: Number(section), 
+      date 
+    });
+
+    // 2. Extract just the student IDs
+    const studentIds = presentRecords.map(record => record.studentId);
+
+    // 3. Get the actual names of those students from the Student collection
+    const students = await Student.find({ studentId: { $in: studentIds } }).select("studentId name");
+
+    res.json({ success: true, presentees: students });
+  } catch (error) {
+    console.error("Error fetching presentees:", error);
+    res.status(500).json({ success: false, message: "Error fetching presentees" });
+  }
+});
+
 // ---------- Start Server ---------- //
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
